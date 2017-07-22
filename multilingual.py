@@ -1,5 +1,6 @@
 import os
 import sys
+import logging
 #WordNet
 import nltk
 from nltk.corpus import WordNetCorpusReader
@@ -20,6 +21,10 @@ import codecs
 import csv
 
 import util
+
+# ログ
+logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)-7s %(message)s')
+logger = logging.getLogger(__name__)
 
 class WSLObject:
     def __init__(self, name, attribute, lang = None):
@@ -198,6 +203,148 @@ class MultilingualWordVector:
         f.close()
         print("OUTPUT FILE DONE!")
 
+    # ************TEST************
+
+    def scws_test(self, progress_per = 100):
+        N = 999 #datanum
+        df = pd.read_csv('Test/input/ratings1.csv')
+
+        Lists = {}
+        Lists['s1'] = []
+        Lists['s2'] = []
+        Lists['result'] = []
+
+        logger.info('SCWS TEST : START')
+
+        for i in range(N):
+            if i % progress_per == 0:
+                logger.info('SCWS TEST : %i/%i DONE', i ,N )
+
+            # word1の文脈ベクトル算出
+            c1 = re.sub(r'[^a-zA-Z ]', '', df['Context1'][i]).lower().split(' ')
+            c1_list = []
+            for c in c1:
+                if c in self.get[('word', lang)].model:
+                    c1_list.append(self.get[('word', lang)].model[c])
+            c1_vec = sum(c1_list)
+
+            # word2の文脈ベクトル算出
+            c2 = re.sub(r'[^a-zA-Z ]', '', df['Context2'][i]).lower().split(' ')
+            c2_list = []
+            for c in c2:
+                if c in self.get[('word', lang)].model:
+                    c2_list.append(self.get[('word', lang)].model[c])
+            c2_vec = sum(c2_list)
+
+            sim1 = 0
+
+            for s1 in wn.synsets(df['Word1'][i], pos = df['POS1'][i]):
+                if s1.name() in self.get[('synset', None)].model:
+                    syn_vec = self.get[('synset', None)].model[s1.name()]
+                    if syn_vec is not 0:
+                        temp1 = sum(np.array(syn_vec)*c1_vec)/np.sqrt(sum(np.array(syn_vec)*np.array(syn_vec))*sum(c1_vec*c1_vec))
+                    else:
+                        temp1 = 0
+                else:
+                    temp1 = 0
+
+                if temp1 > sim1:
+                    s1c = s1.name()
+                    s1vec = syn_vec
+                    sim1 = temp1
+            if sim1 is 0:
+                Lists['s1'].append('None')
+            else:
+                Lists['s1'].append(s1c)
+
+            sim2 = 0
+            # for s2 in WN17.synsets(df['Word2'][i]):
+            for s2 in wn.synsets(df['Word2'][i], pos = df['POS2'][i]):
+                if s2.name() in self.get[('synset', None)].model:
+                    syn_vec = self.get[('synset', None)].model[s1.name()]
+                    if syn_vec is not 0:
+                        temp2 = sum(np.array(syn_vec)*c2_vec)/np.sqrt(sum(syn_vec*syn_vec)*sum(c2_vec*c2_vec))
+                    else:
+                        temp2 = 0
+                else:
+                    temp2 = 0
+
+                if temp2 > sim2:
+                    s2c = s2.name()
+                    s2vec = syn_vec
+                    sim2 = temp2
+            if sim2 is 0:
+                Lists['s2'].append('None')
+            else:
+                Lists['s2'].append(s2c)
+
+            if (sim1 == 0) or (sim2 == 0):
+                Lists['result'].append(-1)
+            else:
+                Lists['result'].append(sum(s1vec*s2vec)/np.sqrt(sum(s1vec*s1vec)*sum(s2vec*s2vec)))
+
+        df['s1'] = Lists['s1']
+        df['s2'] = Lists['s2']
+        df['result'] = Lists['result']
+
+        df.to_csv('Test/output/scws_raiting_pos1.csv')
+
+        df = pd.read_csv('Test/output/scws_raiting_pos1.csv')
+
+        mean = df['mean']
+        r = spearmanr(mean, df['result'])
+        print(r)
+
+    def sim353_test(self, progress_per=100):
+        N = 353
+        df = pd.read_csv('Test/input/combined.csv')
+
+        Lists = {}
+        Lists['s1'] = []
+        Lists['s2'] = []
+        Lists['result'] = []
+
+        for i in range(N):
+            if i % progress_per == 0:
+                logger.info('SCWS TEST : %i/%i DONE', i ,N )
+
+            Temps = []
+            S1 = []
+            S2 = []
+
+            for s1 in wn.synsets(df['Word 1'][i]):
+                if s1.name() in self.get[('synset', None)].model:
+                    syn1vec = self.get[('synset', None)].model[s1.name()]
+                S1.append(s1.name())
+
+                for s2 in wn.synsets(df['Word 2'][i]):
+                    if s2.name() in self.get[('synset', None)].model:
+                        syn2vec = self.get[('synset', None)].model[s2.name()]
+                    S2.append(s2.name())
+
+                    try:
+                        temp = sum(syn1vec*syn2vec)/np.sqrt(sum(syn1vec*syn1vec)*sum(syn2vec*syn2vec))
+                        Temps.append(temp)
+                    except:
+                        Temps.append(-1)
+
+            max_index = Temps.index(max(Temps))[0]
+            Lists['s1'].append(S1[max_index])
+            Lists['s2'].append(S2[max_index])
+            Lists['result'].append(Temps[max_index])
+
+        df['s1'] = Lists['s1']
+        df['s2'] = Lists['s2']
+        df['result'] = Lists['result']
+
+        df.to_csv('Test/output/sim353_test.csv')
+
+        df = pd.read_csv('Test/output/sim353_test.csv')
+
+        mean = df['Human (mean)']
+        r = spearmanr(mean, df['result'])
+        print(r)
+
 
 def load_csv(file_name):
     result = []
@@ -214,77 +361,9 @@ def load_csv(file_name):
     print("LOADING CSV DONE!!")
     return result
 
-def scws_test(self):
-    N = 999 #datanum
-    df = pd.read_csv('Test/input/ratings1.csv')
 
-    for i in range(N):
-        # Temps[elem] = [-1]
 
-        # word1の文脈ベクトル算出
-        c1 = re.sub(r'[^a-zA-Z ]', '', df['Context1'][i]).lower().split(' ')
-        c1_list = []
-        for c in c1:
-            if self.get[('word', lang)].in_vocab(c):
-                c1_list.append(self.get[('word', lang)].model[c])
-        c1_vec = sum(c1_list)
 
-        # word2の文脈ベクトル算出
-        c2 = re.sub(r'[^a-zA-Z ]', '', df['Context2'][i]).lower().split(' ')
-        c2_list = []
-        for c in c2:
-            if self.get[('word', lang)].in_vocab(c):
-                c2_list.append(self.get[('word', lang)].model[c])
-        c2_vec = sum(c2_list)
-
-        sim1 = 0
-
-        for s1 in wn.synsets(df['Word1'][i], pos = df['POS1'][i]):
-            if s1.name() in self.get[('synset', None)].model:
-                syn_vec = self.get[('synset', None)].model[s1.name()]
-                if syn_vec is not 0:
-                    temp1 = sum(np.array(syn_vec)*c1_vec)/np.sqrt(sum(np.array(syn_vec)*np.array(syn_vec))*sum(c1_vec*c1_vec))
-                else:
-                    temp1 = 0
-            else:
-                temp1 = 0
-
-            if temp1 > sim1:
-                s1c = s1.name()
-                s1vec = syn_vec
-                sim1 = temp1
-        if sim1 is 0:
-            Lists['s1'].append('None')
-        else:
-            Lists['s1'].append(s1c)
-
-        sim2 = 0
-        # for s2 in WN17.synsets(df['Word2'][i]):
-        for s2 in wn.synsets(df['Word2'][i], pos = df['POS2'][i]):
-            if s2.name() in self.get[('synset', None)].model:
-                syn_vec = self.get[('synset', None)].model[s1.name()]
-                if syn_vec is not 0:
-                    temp2 = sum(np.array(syn_vec)*c2_vec)/np.sqrt(sum(syn_vec*syn_vec)*sum(c2_vec*c2_vec))
-                else:
-                    temp2 = 0
-            else:
-                temp2 = 0
-
-            if temp2 > sim2:
-                s2c = s2.name()
-                s2vec = syn_vec
-                sim2 = temp2
-        if sim2 is 0:
-            Lists['s2'].append('None')
-        else:
-            Lists['s2'].append(s2c)
-
-        if (sim1 == 0) or (sim2 == 0):
-            Lists['result'].append(-1)
-        else:
-            Lists['result'].append(sum(s1vec*s2vec)/np.sqrt(sum(s1vec*s1vec)*sum(s2vec*s2vec)))
-
-        print(i)
 
 
 #****************************************************Test****************************************************
