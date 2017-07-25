@@ -207,6 +207,7 @@ class MultilingualWordVector:
 
     def scws_test(self, progress_per = 100):
         N = 999 #datanum
+        lang = 'eng'
         df = pd.read_csv('Test/input/ratings1.csv')
 
         Lists = {}
@@ -287,9 +288,100 @@ class MultilingualWordVector:
         df['s2'] = Lists['s2']
         df['result'] = Lists['result']
 
-        df.to_csv('Test/output/scws_raiting_pos1.csv')
+        df.to_csv('Test/output/scws_raiting_synset.csv')
 
-        df = pd.read_csv('Test/output/scws_raiting_pos1.csv')
+        df = pd.read_csv('Test/output/scws_raiting_synset.csv')
+
+        mean = df['mean']
+        r = spearmanr(mean, df['result'])
+        print(r)
+
+    def scws_test_lemma(self, progress_per = 100):
+        N = 999 #datanum
+        lang = 'eng'
+        df = pd.read_csv('Test/input/ratings1.csv')
+
+        Lists = {}
+        Lists['l1'] = []
+        Lists['l2'] = []
+        Lists['result'] = []
+
+        logger.info('SCWS TEST@LEMMA : START')
+
+        for i in range(N):
+            if i % progress_per == 0:
+                logger.info('SCWS TEST : %i/%i DONE', i ,N )
+
+            # word1の文脈ベクトル算出
+            c1 = re.sub(r'[^a-zA-Z ]', '', df['Context1'][i]).lower().split(' ')
+            c1_list = []
+            for c in c1:
+                if c in self.get[('word', lang)].model:
+                    c1_list.append(self.get[('word', lang)].model[c])
+            c1_vec = sum(c1_list)
+
+            # word2の文脈ベクトル算出
+            c2 = re.sub(r'[^a-zA-Z ]', '', df['Context2'][i]).lower().split(' ')
+            c2_list = []
+            for c in c2:
+                if c in self.get[('word', lang)].model:
+                    c2_list.append(self.get[('word', lang)].model[c])
+            c2_vec = sum(c2_list)
+
+            sim1 = 0
+
+            for s1 in wn.synsets(df['Word1'][i], pos = df['POS1'][i]):
+                if s1.name()+':'+df['Word1'][i] in self.get[('lemma', lang)].model:
+                    lemma_vec = self.get[('lemma', lang)].model[s1.name()+':'+df['Word1'][i]]
+                    if lemma_vec is not 0:
+                        temp1 = sum(np.array(lemma_vec)*c1_vec)/np.sqrt(sum(np.array(lemma_vec)*np.array(lemma_vec))*sum(c1_vec*c1_vec))
+                    else:
+                        temp1 = 0
+                else:
+                    temp1 = 0
+
+                if temp1 > sim1:
+                    l1c = s1.name()+':'+df['Word1'][i]
+                    l1vec = lemma_vec
+                    sim1 = temp1
+            if sim1 is 0:
+                Lists['l1'].append('None')
+            else:
+                Lists['l1'].append(l1c)
+
+            sim2 = 0
+            # for s2 in WN17.synsets(df['Word2'][i]):
+            for s2 in wn.synsets(df['Word2'][i], pos = df['POS2'][i]):
+                if s2.name()+':'+df['Word2'][i] in self.get[('lemma', lang)].model:
+                    lemma_vec = self.get[('lemma', lang)].model[s2.name()+':'+df['Word2'][i]]
+                    if lemma_vec is not 0:
+                        temp2 = sum(np.array(lemma_vec)*c2_vec)/np.sqrt(sum(lemma_vec*lemma_vec)*sum(c2_vec*c2_vec))
+                    else:
+                        temp2 = 0
+                else:
+                    temp2 = 0
+
+                if temp2 > sim2:
+                    l2c = s2.name()+':'+df['Word2'][i]
+                    l2vec = lemma_vec
+                    sim2 = temp2
+            if sim2 is 0:
+                Lists['l2'].append('None')
+            else:
+                Lists['l2'].append(l2c)
+
+            if (sim1 == 0) or (sim2 == 0):
+                Lists['result'].append(-1)
+            else:
+                Lists['result'].append(sum(l1vec*l2vec)/np.sqrt(sum(l1vec*l1vec)*sum(l2vec*l2vec)))
+
+        df['l1'] = Lists['l1']
+        df['l2'] = Lists['l2']
+        df['result'] = Lists['result']
+
+        df.to_csv('Test/output/scws_raiting_lemma.csv')
+
+        df = pd.read_csv('Test/output/scws_raiting_lemma.csv')
 
         mean = df['mean']
         r = spearmanr(mean, df['result'])
@@ -306,7 +398,7 @@ class MultilingualWordVector:
 
         for i in range(N):
             if i % progress_per == 0:
-                logger.info('SCWS TEST : %i/%i DONE', i ,N )
+                logger.info('SIM353 TEST : %i/%i DONE', i ,N )
 
             Temps = []
             S1 = []
@@ -340,6 +432,57 @@ class MultilingualWordVector:
         df.to_csv('Test/output/sim353_test.csv')
 
         df = pd.read_csv('Test/output/sim353_test.csv')
+
+        mean = df['Human (mean)']
+        r = spearmanr(mean, df['result'])
+        print(r)
+
+    def sim353_test_lemma(self, progress_per=100):
+        N = 353
+        lang = 'eng'
+        df = pd.read_csv('Test/input/combined.csv')
+
+        Lists = {}
+        Lists['l1'] = []
+        Lists['l2'] = []
+        Lists['result'] = []
+
+        for i in range(N):
+            if i % progress_per == 0:
+                logger.info('SIM353 TEST@LEMMA : %i/%i DONE', i ,N )
+
+            Temps = []
+            L1 = []
+            L2 = []
+
+            for s1 in wn.synsets(df['Word 1'][i]):
+                if s1.name()+':'+df['Word 1'][i] in self.get[('lemma', lang)].model:
+                    lemma1vec = self.get[('lemma', lang)].model[s1.name()+':'+df['Word 1'][i]]
+                L1.append(s1.name()+':'+df['Word 1'][i])
+
+                for s2 in wn.synsets(df['Word 2'][i]):
+                    if s2.name() in self.get[('lemma', lang)].model:
+                        lemma2vec = self.get[('lemma', lang)].model[s1.name()+':'+df['Word 2'][i]]
+                    L2.append(s1.name()+':'+df['Word 2'][i])
+
+                    try:
+                        temp = sum(lemma1vec*lemma2vec)/np.sqrt(sum(lemma1vec*lemma1vec)*sum(lemma2vec*lemma2vec))
+                        Temps.append(temp)
+                    except:
+                        Temps.append(-1)
+
+            max_index = Temps.index(max(Temps))[0]
+            Lists['l1'].append(L1[max_index])
+            Lists['l2'].append(L2[max_index])
+            Lists['result'].append(Temps[max_index])
+
+        df['l1'] = Lists['l1']
+        df['l2'] = Lists['l2']
+        df['result'] = Lists['result']
+
+        df.to_csv('Test/output/sim353_test_lemma.csv')
+
+        df = pd.read_csv('Test/output/sim353_test_lemma.csv')
 
         mean = df['Human (mean)']
         r = spearmanr(mean, df['result'])
